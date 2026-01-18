@@ -1,23 +1,5 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: Osman Yasal
-// 
-// Create Date: 01/18/2026
-// Design Name: 
-// Module Name: calculator
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
+
 module calculator(
     input logic CLK100MHZ,
     input logic [15:0] SW,
@@ -29,16 +11,17 @@ module calculator(
     output logic [7:0] AN,      // Anodes
     output logic [7:0] out      // Cathodes
     );
-    // --- Clock divider to meet timing requirements ---
+
+    // --- Clock divider ---
     logic CLK5MHZ;
     clock_divider clk_div_inst (
         .clk_in(CLK100MHZ),
         .clk_out(CLK5MHZ)
     );
+
     // --- State & Op Definitions ---
     typedef enum {IDLE, BTN_PRESS, RESULT} state_t;
     state_t current_state, next_state;
-    
     typedef enum {NONE, ADD, SUB, MUL, DIV} op_t; 
     op_t current_op;
     
@@ -49,13 +32,14 @@ module calculator(
     logic btn_edge;
     
     // --- Display Signals ---
-    logic [31:0] val_to_display;     // The value routed to the screen
-    logic [39:0] bcd_result;         // BCD output from converter
+    logic is_negative;               // Flag to indicate if we need a minus sign
+    logic [31:0] val_to_display;     // The Absolute Value routed to BCD
+    logic [39:0] bcd_result;         // BCD output
     logic [3:0]  current_nibble;     // Current 4-bit digit to render
     logic [19:0] refresh_counter;    // Mux timer
     logic [2:0]  digit_select;       // Active digit
+    logic [7:0]  decoded_segments;   // Output from 7-seg decoder
 
-    // --- Initialization ---
     initial begin
         current_op = NONE;
         btn_edge = 0;
@@ -68,7 +52,7 @@ module calculator(
     end
     
     // -------------------------------------------------------------------------
-    // 1. State Register & Input Sync
+    // 1. State Register & Input Sync (5MHz)
     // -------------------------------------------------------------------------
     always_ff @(posedge CLK5MHZ) begin
         current_state <= next_state;
@@ -83,48 +67,27 @@ module calculator(
         btn_edge = (btn_synchronizer[2:1] == 2'b01); 
         
         case (current_state)
-            IDLE: begin
-                // Transition 1: User enters 'a' then presses Op
-                if(btn_edge && (BTNU | BTND | BTNL | BTNR))
-                    next_state = BTN_PRESS;
-            end
-            BTN_PRESS: begin
-                // Transition 2: User enters 'b' then presses Equals
-                if(btn_edge && BTNC)
-                    next_state = RESULT;
-            end
-            RESULT: begin
-                // Transition 3: Reset
-                if(btn_edge)
-                    next_state = IDLE;
-            end
+            IDLE:      if(btn_edge && (BTNU | BTND | BTNL | BTNR)) next_state = BTN_PRESS;
+            BTN_PRESS: if(btn_edge && BTNC) next_state = RESULT;
+            RESULT:    if(btn_edge) next_state = IDLE;
         endcase
     end
     
     // -------------------------------------------------------------------------
-    // 3. Datapath Logic
+    // 3. Datapath Logic (5MHz)
     // -------------------------------------------------------------------------
     always_ff @(posedge CLK5MHZ) begin
         if(btn_edge) begin
-            
-            // ff Operation
             if(BTNU) current_op <= ADD;
             else if(BTND) current_op <= SUB;
             else if(BTNL) current_op <= MUL;
             else if(BTNR) current_op <= DIV;
             
             case(current_state)
-                IDLE: begin
-                    if (BTNU | BTND | BTNL | BTNR) begin
-                        a <= SW; // ff 'a'
-                    end
-                end
-                
+                IDLE: if (BTNU | BTND | BTNL | BTNR) a <= SW;
                 BTN_PRESS: begin
                     if (BTNC) begin
-                        b <= SW; // ff 'b'
-                        
-                        // Calculate Total based on 'a' and current SW ('b')
+                        b <= SW;
                         case (current_op)
                             ADD: total <= a + SW;
                             SUB: total <= a - SW;
@@ -145,40 +108,43 @@ module calculator(
     // 4. Output Logic (Display Mux)
     // -------------------------------------------------------------------------
 
-    // A. Select Value based on Order/State
+    // A. Calculate Magnitude and Sign
     always_comb begin
+        is_negative = 0; // Default
+        val_to_display = 0;
+
         case(current_state)
-            // Phase 1: User is selecting inputs for A
-            IDLE: begin
-                val_to_display = {16'b0, SW}; 
+            // For inputs (IDLE/BTN_PRESS), check if SW is negative (signed 16-bit)
+            IDLE, BTN_PRESS: begin
+                if (SW[15] == 1) begin // Check Sign Bit
+                    val_to_display = -SW; // 2's complement negation
+                    is_negative = 1;
+                end else begin
+                    val_to_display = {16'b0, SW};
+                    is_negative = 0;
+                end
             end
 
-            // Phase 2: User is selecting inputs for B
-            // (Even though 'a' is stored, we show SW so user can see what they type for 'b')
-            BTN_PRESS: begin
-                val_to_display = {16'b0, SW}; 
-            end
-
-            // Phase 3: Show calculation result
+            // For result, check total
             RESULT: begin
-                // Handle Negative Numbers (Show Magnitude)
-                if (total < 0) 
+                if (total < 0) begin
                     val_to_display = -total;
-                else 
+                    is_negative = 1;
+                end else begin
                     val_to_display = total[31:0];
+                    is_negative = 0;
+                end
             end
-            
-            default: val_to_display = 0;
         endcase
     end
 
-    // B. Binary to BCD Conversion
+    // B. BCD Conversion
     bin32_to_bcd bcd_conv_inst (
         .binary(val_to_display),
         .bcd(bcd_result)
     );
 
-    // C. Multiplexing Timer
+    // C. Multiplexing Timer (100MHz for smooth display)
     always_ff @(posedge CLK100MHZ) begin
         refresh_counter <= refresh_counter + 1;
     end
@@ -201,13 +167,25 @@ module calculator(
     // E. 7-Segment Decoder
     seven_segment seg_decode_inst (
         .sw_in(current_nibble),
-        .out(out)
+        .out(decoded_segments) // Intermediate signal
     );
-
-    // F. Anode Driver
+    
+    // F. Final Output Driver (With Negative Sign Override)
     always_comb begin
+        // Anode Control
         AN = 8'b11111111; 
         AN[digit_select] = 1'b0; 
+        
+        // Cathode Control
+        // If we are on the leftmost digit (7) AND the number is negative...
+        if (digit_select == 3'd7 && is_negative) begin
+             // Display MINUS sign only (Segment G ON, others OFF)
+             // 10111111 -> Only 'g' (middle) is 0 (Active)
+             out = 8'b10111111; 
+        end else begin
+             // Otherwise, display the decoded number
+             out = decoded_segments;
+        end
     end
 
 endmodule
