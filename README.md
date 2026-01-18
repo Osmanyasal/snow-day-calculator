@@ -70,11 +70,5 @@ This project was developed and synthesized using **Xilinx Vivado**.
 5.  Run **Synthesis** -> **Implementation** -> **Generate Bitstream**.
 6.  Program your device via Hardware Manager.
 
-## 📝 Author
-
-**Osman Yasal**
-* [LinkedIn](https://www.linkedin.com/in/osmanyasal/)
-* [GitHub](https://github.com/Osmanyasal)
-
 ---
 *If you find this project helpful, please give it a star! ⭐*
