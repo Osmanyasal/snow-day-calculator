@@ -2,7 +2,8 @@
 
 A hardware-based 16-bit calculator implemented in SystemVerilog for Xilinx Artix-7 FPGAs. This project features a custom Finite State Machine (FSM) for operation sequencing, a hybrid clock architecture to meet timing constraints, and a multiplexed 7-segment display driver with real-time Binary-to-BCD conversion.
 
-![Project Demo]![WhatsApp Image 2026-01-18 at 16 13 31](https://github.com/user-attachments/assets/896a30ca-35c5-46bc-b881-92af99b559aa)
+Project Demo
+[WhatsApp Image 2026-01-18 at 16 13 31](https://github.com/user-attachments/assets/896a30ca-35c5-46bc-b881-92af99b559aa)
 
 ## 🚀 Features
 
